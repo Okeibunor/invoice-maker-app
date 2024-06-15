@@ -1,0 +1,156 @@
+#!/usr/bin/env ruby
+$LOAD_PATH << File.expand_path('lib')
+
+require 'optparse'
+require 'invoice_printer'
+
+def show_version
+  puts "InvoicePrinter v#{InvoicePrinter::VERSION}"
+
+  exit 0
+end
+
+def show_help
+  puts <<~HELP
+    Usage: invoice_printer [options]
+
+    Options:
+
+      -d, --document   document as JSON
+        -l, --labels   labels as JSON
+              --font   path to font or builtin font name
+         --bold-font   path to bold font or builtin font name
+         -s, --stamp   path to stamp
+              --logo   path to logotype
+        --background   path to background image
+         --page-size   letter or a4 (letter is the default)
+      -f, --filename   output path
+        -r, --render   directly render PDF stream (filename option will be ignored)
+       -v, --version   show version
+
+  HELP
+
+  exit 0
+end
+
+options = {}
+
+parser = OptionParser.new do|opts|
+  opts.on('-d', '--document JSON') do |json|
+    options[:document] = json
+  end
+
+  opts.on('-l', '--labels JSON') do |json|
+    options[:labels] = json
+  end
+
+  opts.on('--font PATH') do |path|
+    options[:font] = path
+  end
+
+  opts.on('--bold-font PATH') do |path|
+    options[:bold_font] = path
+  end
+
+  opts.on('-s', '--stamp PATH') do |path|
+    options[:stamp] = path
+  end
+
+  opts.on('--logo PATH') do |path|
+    options[:logo] = path
+  end
+
+  opts.on('--background PATH') do |path|
+    options[:background] = path
+  end
+
+  opts.on('--page-size OPTION') do |option|
+    options[:page_size] = option.to_sym
+  end
+
+  opts.on('-f', '--filename PATH') do |path|
+    options[:filename] = path
+  end
+
+  opts.on('-r', '--render') do
+    options[:render] = true
+  end
+
+  opts.on('-v', '--version') do
+    show_version
+  end
+
+  opts.on('--debug') do
+    options[:debug] = true
+  end
+
+  opts.on('-h', '--help') do
+    show_help
+  end
+end
+
+begin
+  parser.parse!
+
+  show_help if options.empty?
+
+  # Defaults
+  options[:page_size] ||= :letter
+
+  raise '--document not provided' unless options[:document]
+
+  begin
+    json     = JSON.parse(options[:document])
+    document = InvoicePrinter::Document.from_json(json)
+    labels   = options[:labels] ? JSON.parse(options[:labels]) : {}
+
+  rescue => e
+    STDERR.puts "ERROR: parsing JSON failed. Invalid JSON?"
+
+    if options[:debug]
+      STDERR.puts
+      STDERR.puts e.message
+      STDERR.puts e.backtrace
+    end
+
+    exit 1
+  end
+
+  if options[:render]
+    stream = InvoicePrinter.render(
+      document:   document,
+      labels:     labels,
+      font:       options[:font],
+      bold_font:  options[:bold_font],
+      stamp:      options[:stamp],
+      logo:       options[:logo],
+      background: options[:background],
+      page_size:  options[:page_size]
+    )
+
+    puts stream
+  else
+    raise '--filename not provided. Use --render if you with to render to STDOUT.' unless options[:filename]
+
+    InvoicePrinter.print(
+      document:   document,
+      labels:     labels,
+      font:       options[:font],
+      bold_font:  options[:bold_font],
+      stamp:      options[:stamp],
+      logo:       options[:logo],
+      file_name:  options[:filename],
+      background: options[:background],
+      page_size:  options[:page_size]
+    )
+  end
+rescue => e
+  STDERR.puts "ERROR: #{e.message}"
+
+  if options[:debug]
+    STDERR.puts
+    STDERR.puts e.backtrace
+  end
+
+  exit 1
+end
